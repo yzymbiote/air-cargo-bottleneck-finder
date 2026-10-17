@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Air Cargo Bottleneck Finder</title>
+  <meta name="description" content="Simulate a day at an air cargo export terminal, find the bottleneck stage and test the best way to add staff or machines.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <p class="eyebrow">Supply chain simulation tool</p>
+      <h1>Air Cargo Terminal Bottleneck Finder</h1>
+      <p class="lead">Enter the operating numbers for an export cargo terminal. The tool simulates a day of shipments moving from acceptance to the aircraft, shows where they get stuck, and tests the best way to add extra staff or machines.</p>
+      <ol class="flow" aria-label="Process stages">
+        <li><span>1</span>Acceptance &amp; documents</li>
+        <li><span>2</span>Security screening</li>
+        <li><span>3</span>Build-up onto ULDs</li>
+        <li><span>4</span>Ramp transfer</li>
+      </ol>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <p class="notice"><strong>Illustrative assumptions only.</strong> Default values are made-up but plausible figures for demonstration. They are not real airline or terminal data.</p>
+
+    <!-- ===================== INPUTS ===================== -->
+    <section class="card" id="inputs" aria-labelledby="inputs-title">
+      <h2 id="inputs-title">1. Terminal inputs</h2>
+      <form id="config-form" novalidate>
+        <div class="grid-2">
+          <fieldset>
+            <legend>Day and demand</legend>
+            <div class="field-row">
+              <label>Terminal opens <input type="time" id="openTime" step="900"></label>
+              <label>Terminal closes <input type="time" id="closeTime" step="900"></label>
+            </div>
+            <div class="field-row">
+              <label>Normal arrivals per hour <input type="number" id="baseRate" min="0" max="500" step="1" inputmode="numeric"></label>
+              <label>Peak arrivals per hour <input type="number" id="peakRate" min="0" max="500" step="1" inputmode="numeric"></label>
+            </div>
+            <div class="field-row">
+              <label>Peak starts <input type="time" id="peakStart" step="900"></label>
+              <label>Peak ends <input type="time" id="peakEnd" step="900"></label>
+            </div>
+            <label>Priority / perishable shipments (%)
+              <input type="number" id="priorityPct" min="0" max="100" step="1" inputmode="numeric">
+              <small>These jump the queue at every stage.</small>
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Flight cutoffs</legend>
+            <p class="hint">The time each flight's cargo must have finished ramp transfer. Leave flight 3 blank for a two-flight day.</p>
+            <div class="field-row three">
+              <label>Flight 1 <input type="time" id="cutoff1" step="300"></label>
+              <label>Flight 2 <input type="time" id="cutoff2" step="300"></label>
+              <label>Flight 3 <input type="time" id="cutoff3" step="300"></label>
+            </div>
+            <label>Minimum lead time before cutoff (min)
+              <input type="number" id="leadTime" min="0" max="600" step="5" inputmode="numeric">
+              <small>Shipments are booked on the earliest flight whose cutoff is at least this far away. Cargo too late for every flight goes on tomorrow's flights.</small>
+            </label>
+          </fieldset>
+        </div>
+
+        <fieldset>
+          <legend>Stages</legend>
+          <div class="stage-inputs" id="stage-inputs">
+            <div class="stage-head" aria-hidden="true"><span>Stage</span><span>Staff / machines</span><span>Avg minutes per shipment</span></div>
+            <!-- rows are added by app.js -->
+          </div>
+        </fieldset>
+
+        <details class="advanced">
+          <summary>Simulation settings</summary>
+          <div class="field-row">
+            <label>Simulated days to average <input type="number" id="replications" min="1" max="200" step="1" inputmode="numeric"></label>
+            <label>Random seed <input type="number" id="seed" min="0" step="1" inputmode="numeric"></label>
+          </div>
+          <p class="hint">More days give a steadier average but take longer. The same seed always gives the same result.</p>
+        </details>
+
+        <div id="form-errors" class="errors" role="alert" hidden></div>
+        <div class="actions">
+          <button type="submit" class="btn primary" id="run-btn">Run simulation</button>
+          <button type="button" class="btn ghost" id="reset-btn">Reset to defaults</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ===================== RESULTS ===================== -->
+    <section class="card" id="results" aria-labelledby="results-title" aria-live="polite">
+      <h2 id="results-title">2. Simulation results</h2>
+      <p class="hint" id="results-meta"></p>
+
+      <div class="kpis" id="kpis"></div>
+      <div class="bottleneck" id="bottleneck-banner"></div>
+
+      <div class="table-wrap">
+        <table class="data" id="stage-table">
+          <thead>
+            <tr><th scope="col">Stage</th><th scope="col">Staff / machines</th><th scope="col">Avg wait (min)</th><th scope="col">Avg queue (shipments)</th><th scope="col">Peak queue</th><th scope="col">Utilisation</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="grid-2 charts">
+        <figure class="chart-box">
+          <figcaption>Utilisation by stage</figcaption>
+          <div class="chart-holder"><canvas id="util-chart" role="img" aria-label="Bar chart of utilisation by stage"></canvas></div>
+        </figure>
+        <figure class="chart-box">
+          <figcaption>Shipments waiting through the day</figcaption>
+          <div class="chart-holder"><canvas id="timeline-chart" role="img" aria-label="Line chart of queue length at each stage through the day"></canvas></div>
+        </figure>
+      </div>
+
+      <h3>By flight</h3>
+      <div class="table-wrap">
+        <table class="data" id="flight-table">
+          <thead><tr><th scope="col">Flight</th><th scope="col">Cutoff</th><th scope="col">Shipments booked</th><th scope="col">Missed cutoff</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===================== OPTIMISER ===================== -->
+    <section class="card" id="solution" aria-labelledby="solution-title">
+      <h2 id="solution-title">3. Find a solution</h2>
+      <p>How many extra staff or machines could you add? The tool tests every way of spreading them across the four stages, runs each option on the same simulated days, and recommends the one that cuts missed cutoffs the most. If two options are practically tied, it picks the one that needs fewer extra resources.</p>
+      <form id="optimise-form" class="optimise-form" novalidate>
+        <label>Extra staff / machines budget
+          <input type="number" id="budget" min="1" max="6" step="1" value="3" inputmode="numeric">
+        </label>
+        <button type="submit" class="btn primary" id="optimise-btn">Find the best fix</button>
+      </form>
+      <div class="progress" id="opt-progress" hidden><div class="progress-bar" id="opt-progress-bar"></div><span id="opt-progress-text"></span></div>
+      <div id="opt-errors" class="errors" role="alert" hidden></div>
+
+      <div id="opt-result" aria-live="polite" hidden>
+        <p class="recommendation" id="recommendation"></p>
+        <div class="grid-2 charts">
+          <div class="table-wrap">
+            <table class="data compare" id="compare-table">
+              <thead><tr><th scope="col">Measure</th><th scope="col">Before</th><th scope="col">After</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <figure class="chart-box">
+            <figcaption>Average wait by stage: before vs after</figcaption>
+            <div class="chart-holder"><canvas id="compare-chart" role="img" aria-label="Grouped bar chart of average wait per stage before and after the recommended change"></canvas></div>
+          </figure>
+        </div>
+        <h3>Top 5 options tested</h3>
+        <div class="table-wrap">
+          <table class="data" id="options-table">
+            <thead><tr><th scope="col">#</th><th scope="col">Extra resources</th><th scope="col">Missed cutoff</th><th scope="col">Avg time in terminal</th><th scope="col">New bottleneck</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== HOW IT WORKS ===================== -->
+    <section class="card prose" id="how" aria-labelledby="how-title">
+      <h2 id="how-title">How this works</h2>
+      <p><strong>The problem.</strong> Export cargo has to pass four stages before a flight's cutoff. If one stage can't keep up, especially in the rush before a cutoff, shipments pile up there and miss their flight. Adding resources in the wrong place costs money without fixing anything.</p>
+      <p><strong>The method: discrete-event simulation.</strong> The tool creates a realistic day of shipments. Arrival times are random, averaging your hourly rates, and processing times vary randomly around your averages. It then follows every shipment through each stage. If all staff or machines at a stage are busy, the shipment waits in line. Priority and perishable shipments go to the front of each line.</p>
+      <p><strong>Repeatable randomness.</strong> One random day can be lucky or unlucky, so the tool simulates many days and averages them. A fixed "seed" makes the random numbers repeatable, so you always get the same answer for the same inputs. When comparing options, every option is tested on the same simulated days, so any difference comes from the change itself, not from luck.</p>
+      <p><strong>What the measures mean.</strong></p>
+      <ul>
+        <li><strong>Average wait:</strong> minutes a shipment queues at a stage before someone starts on it.</li>
+        <li><strong>Average queue:</strong> how many shipments are waiting at that stage, averaged over the day.</li>
+        <li><strong>Utilisation:</strong> share of the day the staff or machines are busy. Above about 85% queues grow quickly.</li>
+        <li><strong>Bottleneck:</strong> the stage where shipments wait longest. This is the constraint that limits the whole terminal.</li>
+        <li><strong>Missed cutoff:</strong> a shipment booked on today's flight that has not finished ramp transfer by that flight's cutoff.</li>
+      </ul>
+      <p><strong>Finding a solution.</strong> With 4 stages and a budget of 3, there are 35 ways to add up to 3 resources, so the tool simply tests them all (an exhaustive search) instead of guessing. It ranks options by missed cutoffs first, then by fewest extra resources, then by shortest time through the terminal. Adding resources only to the bottleneck often just moves the queue to the next stage, which is why the best answer is frequently a mix.</p>
+      <p><strong>Key assumptions (simplifications).</strong></p>
+      <ul>
+        <li>Each shipment is handled one at a time at each stage. Real build-up and ramp work is often done in batches per flight.</li>
+        <li>Processing times range from 0.5× to 1.7× the average. Most are slightly quicker than average and a few take much longer.</li>
+        <li>Staff and machines are available all day at the numbers entered, with no breaks, shifts or breakdowns.</li>
+        <li>Every shipment passes screening. There are no rejections, re-checks or documentation holds.</li>
+        <li>Work stops at closing time. Anything unfinished is counted as still in the terminal.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Built as a portfolio project with plain HTML, CSS and JavaScript. All figures are illustrative and do not represent any real airline, airport or terminal.</p>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <script src="js/simulation.js"></script>
+  <script src="js/optimiser.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/solution.js"></script>
+</body>
+</html>
